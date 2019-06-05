@@ -1,6 +1,6 @@
-===========
-bb-coverage
-===========
+=====================
+afl-queue-bb-coverage
+=====================
 
 This is an utility to measure the basi blocks coverage of all testcases in the
 AFL queue using a patched QEMU.
