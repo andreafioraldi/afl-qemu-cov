@@ -41,15 +41,6 @@ cov_file = "/tmp/bv-cov-%s" % uuid.uuid4()
 env = os.environ.copy()
 env["BB_LOG_FILE"] = cov_file
 
-class TimeSlot(object):
-    def __init__(self):
-        self.utime = time.time()
-        self.new_bbs = 0
-    def add(self):
-        self.new_bbs += 1
-    def __str__(self):
-        return "%d, %d\n" % (self.utime, self.new_bbs)
-
 bbs = SortedList()
 yet_processed = SortedList()
 
@@ -61,19 +52,19 @@ def handle_sigint(signum, frame):
 signal.signal(signal.SIGINT, handle_sigint)
 
 out_file = open("./bb_cov_monitor_data", "w")
-out_file.write("# unix_time, new_bbs\n")
+out_file.write("# unix_time, bbs_cnt\n")
 out_file.flush()
 
 while True:
     slot = None
 
     for testcase in os.listdir(queue_dir):
-        if not testcase.startwith("id:"):
+        if not testcase.startswith("id:"):
             continue
         if testcase in yet_processed:
             continue
         if slot is None:
-            slot = TimeSlot()
+            slot = time.time()
         print(" new testcase: %s" % testcase)
         yet_processed.add(testcase)
         fname = os.path.join(queue_dir, testcase)
@@ -94,9 +85,8 @@ while True:
                 addr = int(addr, 16)
                 if addr not in bbs:
                     bbs.add(addr)
-                    slot.add()
     
     if slot is not None:
-        out_file.write(str(slot))
+        out_file.write("%d, %d\n" % (slot, len(bbs)))
         out_file.flush()
 
