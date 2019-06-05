@@ -1,0 +1,27 @@
+===========
+bb-coverage
+===========
+
+This is an utility to measure the basi blocks coverage of all testcases in the
+AFL queue using a patched QEMU.
+
+Written and maintained by Andrea Fioraldi <andreafioraldi@gmail.com>
+
+Usage
+-----
+
+To count the number of basic blocks covered by all the testcases in the queue
+run bb_cov.py:
+
+$ ./bb_cov.py /path/to/AFL/queue -- ./binary <args>
+
+To count the number of basic blocks covered by the testcases in the queue on
+demand while fuzzing run bb_cov_monitor.py:
+
+$ ./bb_cov_monitor.py /path/to/AFL/queue -- ./binary <args>
+
+This script will create the file bb_cov_monitor_data in the current directory.
+This file contains pairs (unix timestamp, number of new basic blocks) similar
+in spirit to the plot_data file of AFL.
+
+
