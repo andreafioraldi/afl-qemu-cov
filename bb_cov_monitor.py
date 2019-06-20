@@ -10,17 +10,16 @@ import subprocess
 from sortedcontainers import SortedList
 
 def usage():
-    print ("usage: python3 bb_cov.py <AFL queue dir> -- ./binary <args>\n")
+    print ("usage: python3 bb_cov.py <AFL queue dir> <output file> -- ./binary <args>\n")
     exit(1)
 
-if len(sys.argv) < 4:
+if len(sys.argv) < 5:
     usage()
 
 queue_dir = sys.argv[1]
+out_file = os.path.realpath(sys.argv[2])
 
-if not os.path.isdir(queue_dir):
-    usage()
-if sys.argv[2] != "--":
+if sys.argv[3] != "--":
     usage()
 
 qemu = os.path.join(os.path.dirname(os.path.realpath(__file__)), "bb-trace-qemu")
@@ -28,7 +27,7 @@ if not os.path.exists(qemu):
     print("error: bb-trace-qemu binary not found in %s" % os.path.dirname(os.path.realpath(__file__)))
     exit(1)
 
-args = [qemu] + sys.argv[3:]
+args = [qemu] + sys.argv[4:]
 
 use_stdin = True
 arg_input_idx = -1
@@ -51,20 +50,27 @@ def handle_sigint(signum, frame):
 
 signal.signal(signal.SIGINT, handle_sigint)
 
-out_file = open("./bb_cov_monitor_data", "w")
+out_file = open(out_file, "a")
 out_file.write("# unix_time, bbs_cnt\n")
 out_file.flush()
 
 while True:
     slot = None
 
-    for testcase in os.listdir(queue_dir):
+    try:
+        dirlist = os.listdir(queue_dir)
+    except FileNotFoundError:
+      print("queue folder does not exists")
+      time.sleep(0.2)
+      continue
+    for testcase in dirlist:
         if not testcase.startswith("id:"):
             continue
         if testcase in yet_processed:
             continue
         if slot is None:
             slot = time.time()
+            print (" new slot: %d, current # of bbs: %d" % (slot, len(bbs)))
         print(" new testcase: %s" % testcase)
         yet_processed.add(testcase)
         fname = os.path.join(queue_dir, testcase)
@@ -89,4 +95,6 @@ while True:
     if slot is not None:
         out_file.write("%d, %d\n" % (slot, len(bbs)))
         out_file.flush()
+        if int(slot) == int(time.time()):
+            time.sleep(1)
 
