@@ -1,0 +1,3 @@
+qemu-*
+afl-qemu-cov-tracer
+afl-qemu-cov

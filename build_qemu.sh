@@ -22,23 +22,15 @@
 # will be written to ../afl-qemu-trace.
 #
 
-
-VERSION="3.1.0"
+VERSION="3.1.1"
 QEMU_URL="http://download.qemu-project.org/qemu-${VERSION}.tar.xz"
-QEMU_SHA384="0318f2b5a36eafbf17bca0f914567dfa5e8a3cd6ff83bb46fe49a0079cd71ddd3ec4267c6c62a03f9e26e05cc80e6d4b"
+QEMU_SHA384="28ff22ec4b8c957309460aa55d0b3188e971be1ea7dfebfb2ecc7903cd20cfebc2a7c97eedfcc7595f708357f1623f8b"
 
 echo "[*] Performing basic sanity checks..."
 
 if [ ! "`uname -s`" = "Linux" ]; then
 
   echo "[-] Error: QEMU instrumentation is supported only on Linux."
-  exit 1
-
-fi
-
-if [ ! -f "patches/bb-trace-qemu-cpu-inl.h" -o ! -f "./config.h" ]; then
-
-  echo "[-] Error: key files not found - wrong working directory?"
   exit 1
 
 fi
@@ -97,6 +89,8 @@ else
 
 fi
 
+rm -rf qemu-${VERSION} || exit 1
+
 echo "[*] Uncompressing archive (this will take a while)..."
 
 rm -rf "qemu-${VERSION}" || exit 1
@@ -111,13 +105,9 @@ ORIG_CPU_TARGET="$CPU_TARGET"
 test "$CPU_TARGET" = "" && CPU_TARGET="`uname -m`"
 test "$CPU_TARGET" = "i686" && CPU_TARGET="i386"
 
-rm -rf bb_trace_qemu || exit 1
+cd qemu-${VERSION} || exit 1
 
-mv qemu-${VERSION} bb_trace_qemu || exit 1
-
-cd bb_trace_qemu || exit 1
-
-echo "[*] Applying patches to bb_trace_qemu..."
+echo "[*] Applying patches to qemu-${VERSION}..."
 
 for f in ../patches/*.diff
 do
@@ -135,7 +125,7 @@ CFLAGS="-O3 -ggdb" ./configure --disable-system \
 
 echo "[+] Configuration complete."
 
-echo "[*] Attempting to build bb_trace_qemu (fingers crossed!)..."
+echo "[*] Attempting to build qemu-${VERSION} (fingers crossed!)..."
 
 make -j `nproc` || exit 1
 
@@ -143,6 +133,6 @@ echo "[+] Build process successful!"
 
 echo "[*] Copying binary..."
 
-cp -f "${CPU_TARGET}-linux-user/qemu-${CPU_TARGET}" "../bb-trace-qemu" || exit 1
+cp -f "${CPU_TARGET}-linux-user/qemu-${CPU_TARGET}" "../afl-qemu-cov-tracer" || exit 1
 
 exit 0
