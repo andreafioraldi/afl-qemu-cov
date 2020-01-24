@@ -182,6 +182,7 @@ static void afl_setup(void) {
   } else {
     out_file = stderr;
   }
+  fprintf(out_file, "# testcase_id, bb_address\n");
 
   if (getenv("AFL_INST_LIBS")) {
 
