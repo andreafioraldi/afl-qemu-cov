@@ -1,24 +1,24 @@
 #define AFL_MAIN
-#include "include/config.h"
-#include "include/types.h"
-#include "include/debug.h"
 #include "include/alloc-inl.h"
+#include "include/config.h"
+#include "include/debug.h"
+#include "include/types.h"
 
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <errno.h>
-#include <signal.h>
-#include <dirent.h>
-#include <fcntl.h>
+#include <unistd.h>
 
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define CASE_PREFIX "id:"
 
@@ -28,9 +28,7 @@ s32 forksrv_pid,                        /* PID of the fork server           */
 s32 fsrv_ctl_fd,                        /* Fork server control pipe (write) */
     fsrv_st_fd;                         /* Fork server status pipe (read)   */
 
-u8 *in_dir,
-   *output_file,
-   *out_file;
+u8 *in_dir, *output_file, *out_file;
 
 s32 out_fd;                           /* Persistent fd for out_file         */
 
@@ -39,26 +37,25 @@ static u32 total_execs,                /* Total number of execs             */
     missed_crashes;                    /* Misses due to crashes             */
 u32 exec_tmout = EXEC_TIMEOUT;         /* Exec timeout (ms)                 */
 
-u8 use_stdin = 1;                     /* Use stdin for program input?      */
+u8 use_stdin = 1;                      /* Use stdin for program input?      */
 
 s32 dev_null_fd = -1;                  /* FD to /dev/null                   */
 
-u8*       target_path;                  /* Path to target binary            */
-u8*       target_path_orig;                  /* Path to target binary            */
+u8 *target_path;                        /* Path to target binary            */
+u8 *target_path_orig;                   /* Path to target binary            */
 
 static volatile u8 stop_soon;          /* Ctrl-C pressed?                   */
 
 u8 child_timed_out;
 
-static u8 run_target(char** argv, u8* mem, u32 len, u32 testcase_id);
-
+static u8 run_target(char **argv, u8 *mem, u32 len, u32 testcase_id);
 
 static void collect_coverage(char **argv) {
 
-  struct dirent** nl;
-  s32             nl_cnt;
-  u32             i;
-  u8*             fn;
+  struct dirent **nl;
+  s32 nl_cnt;
+  u32 i;
+  u8 *fn;
 
   ACTF("Scanning '%s'...", in_dir);
 
@@ -80,22 +77,22 @@ static void collect_coverage(char **argv) {
   }
 
   for (i = 0; i < nl_cnt; ++i) {
-  
+
     u32 testcase_id;
 
     if (nl[i]->d_name[0] == '.' ||
         sscanf(nl[i]->d_name, CASE_PREFIX "%06u", &testcase_id) != 1)
-        continue;
-  
-    SAYF("%d/%d\t%s\n", testcase_id, nl_cnt-2, nl[i]->d_name);
+      continue;
+
+    SAYF("%d/%d\t%s\n", testcase_id, nl_cnt - 2, nl[i]->d_name);
 
     struct stat st;
 
-    u8* fn = alloc_printf("%s/%s", in_dir, nl[i]->d_name);
+    u8 *fn = alloc_printf("%s/%s", in_dir, nl[i]->d_name);
 
-    free(nl[i]);       
-    
-    s32 fd = open(fn, O_RDONLY);                                      /* not tracked */
+    free(nl[i]);
+
+    s32 fd = open(fn, O_RDONLY);                             /* not tracked */
 
     if (fstat(fd, &st) || access(fn, R_OK))
       PFATAL("Unable to access '%s'", fn);
@@ -108,15 +105,17 @@ static void collect_coverage(char **argv) {
       continue;
 
     }
-    
-    u8* mem = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (mem == MAP_FAILED) PFATAL("Unable to mmap '%s'", fn);
-    
+
+    u8 *mem = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mem == MAP_FAILED)
+      PFATAL("Unable to mmap '%s'", fn);
+
     run_target(argv, mem, st.st_size, testcase_id);
 
     munmap(mem, st.st_size);
-    
-    if (stop_soon) break;
+
+    if (stop_soon)
+      break;
 
   }
 
@@ -128,7 +127,7 @@ static void collect_coverage(char **argv) {
    is unlinked and a new one is created. Otherwise, out_fd is rewound and
    truncated. */
 
-static void write_to_testcase(void* mem, u32 len) {
+static void write_to_testcase(void *mem, u32 len) {
 
   s32 fd = out_fd;
 
@@ -138,7 +137,8 @@ static void write_to_testcase(void* mem, u32 len) {
 
     fd = open(out_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
 
-    if (fd < 0) PFATAL("Unable to create '%s'", out_file);
+    if (fd < 0)
+      PFATAL("Unable to create '%s'", out_file);
 
   } else
 
@@ -148,7 +148,8 @@ static void write_to_testcase(void* mem, u32 len) {
 
   if (use_stdin) {
 
-    if (ftruncate(fd, len)) PFATAL("ftruncate() failed");
+    if (ftruncate(fd, len))
+      PFATAL("ftruncate() failed");
     lseek(fd, 0, SEEK_SET);
 
   } else
@@ -160,10 +161,10 @@ static void write_to_testcase(void* mem, u32 len) {
 /* Execute target application. Returns 0 if the changes are a dud, or
    1 if they should be kept. */
 
-static u8 run_target(char** argv, u8* mem, u32 len, u32 testcase_id) {
+static u8 run_target(char **argv, u8 *mem, u32 len, u32 testcase_id) {
 
   static struct itimerval it;
-  int                     status = 0;
+  int status = 0;
 
   write_to_testcase(mem, len);
 
@@ -174,19 +175,22 @@ static u8 run_target(char** argv, u8* mem, u32 len, u32 testcase_id) {
 
   if ((res = write(fsrv_ctl_fd, &testcase_id, 4)) != 4) {
 
-    if (stop_soon) return 0;
+    if (stop_soon)
+      return 0;
     RPFATAL(res, "Unable to request new process from fork server (OOM?)");
 
   }
 
   if ((res = read(fsrv_st_fd, &child_pid, 4)) != 4) {
 
-    if (stop_soon) return 0;
+    if (stop_soon)
+      return 0;
     RPFATAL(res, "Unable to request new process from fork server (OOM?)");
 
   }
 
-  if (child_pid <= 0) FATAL("Fork server is misbehaving (OOM?)");
+  if (child_pid <= 0)
+    FATAL("Fork server is misbehaving (OOM?)");
 
   /* Configure timeout, wait for child, cancel timeout. */
 
@@ -201,7 +205,8 @@ static u8 run_target(char** argv, u8* mem, u32 len, u32 testcase_id) {
 
   if ((res = read(fsrv_st_fd, &status, 4)) != 4) {
 
-    if (stop_soon) return 0;
+    if (stop_soon)
+      return 0;
     RPFATAL(res, "Unable to communicate with fork server (OOM?)");
 
   }
@@ -244,11 +249,13 @@ static void init_forkserver(char **argv) {
   s32 rlen;
 
   ACTF("Spinning up the fork server...");
-  if (pipe(st_pipe) || pipe(ctl_pipe)) PFATAL("pipe() failed");
+  if (pipe(st_pipe) || pipe(ctl_pipe))
+    PFATAL("pipe() failed");
 
   forksrv_pid = fork();
 
-  if (forksrv_pid < 0) PFATAL("fork() failed");
+  if (forksrv_pid < 0)
+    PFATAL("fork() failed");
 
   if (!forksrv_pid) {
 
@@ -258,7 +265,7 @@ static void init_forkserver(char **argv) {
       PFATAL("dup2() failed");
 
     }
-    
+
     if (output_file && dup2(dev_null_fd, 2) < 0)
       PFATAL("dup2() failed");
 
@@ -269,8 +276,10 @@ static void init_forkserver(char **argv) {
 
     // Set up control and status pipes, close the unneeded original fds.
 
-    if (dup2(ctl_pipe[0], FORKSRV_FD) < 0) PFATAL("dup2() failed");
-    if (dup2(st_pipe[1], FORKSRV_FD + 1) < 0) PFATAL("dup2() failed");
+    if (dup2(ctl_pipe[0], FORKSRV_FD) < 0)
+      PFATAL("dup2() failed");
+    if (dup2(st_pipe[1], FORKSRV_FD + 1) < 0)
+      PFATAL("dup2() failed");
 
     close(ctl_pipe[0]);
     close(ctl_pipe[1]);
@@ -289,7 +298,7 @@ static void init_forkserver(char **argv) {
   close(st_pipe[1]);
 
   fsrv_ctl_fd = ctl_pipe[1];
-  fsrv_st_fd  = st_pipe[0];
+  fsrv_st_fd = st_pipe[0];
 
   // Configure timeout, wait for child, cancel timeout.
 
@@ -338,9 +347,9 @@ static void init_forkserver(char **argv) {
 
 /* Find binary. */
 
-static void find_binary(u8* fname) {
+static void find_binary(u8 *fname) {
 
-  u8*         env_path = 0;
+  u8 *env_path = 0;
   struct stat st;
 
   if (strchr(fname, '/') || !(env_path = getenv("PATH"))) {
@@ -385,22 +394,23 @@ static void find_binary(u8* fname) {
 
     }
 
-    if (!target_path) FATAL("Program '%s' not found or not executable", fname);
+    if (!target_path)
+      FATAL("Program '%s' not found or not executable", fname);
 
   }
 
 }
 
-void detect_file_args(char** argv, u8* prog_in) {
+void detect_file_args(char **argv, u8 *prog_in) {
 
   u32 i = 0;
 #ifdef __GLIBC__
-  u8* cwd = getcwd(NULL, 0);                /* non portable glibc extension */
+  u8 *cwd = getcwd(NULL, 0);                /* non portable glibc extension */
 #else
-  u8*   cwd;
-  char* buf;
-  long  size = pathconf(".", _PC_PATH_MAX);
-  if ((buf = (char*)malloc((size_t)size)) != NULL) {
+  u8 *cwd;
+  char *buf;
+  long size = pathconf(".", _PC_PATH_MAX);
+  if ((buf = (char *)malloc((size_t)size)) != NULL) {
 
     cwd = getcwd(buf, (size_t)size);                    /* portable version */
 
@@ -413,17 +423,19 @@ void detect_file_args(char** argv, u8* prog_in) {
 
 #endif
 
-  if (!cwd) PFATAL("getcwd() failed");
+  if (!cwd)
+    PFATAL("getcwd() failed");
 
   while (argv[i]) {
 
-    u8* aa_loc = strstr(argv[i], "@@");
+    u8 *aa_loc = strstr(argv[i], "@@");
 
     if (aa_loc) {
 
       u8 *aa_subst, *n_arg;
 
-      if (!prog_in) FATAL("@@ syntax is not supported by this tool.");
+      if (!prog_in)
+        FATAL("@@ syntax is not supported by this tool.");
 
       /* Be sure that we're always using fully-qualified paths. */
 
@@ -441,7 +453,8 @@ void detect_file_args(char** argv, u8* prog_in) {
       argv[i] = n_arg;
       *aa_loc = '@';
 
-      if (prog_in[0] != '/') ck_free(aa_subst);
+      if (prog_in[0] != '/')
+        ck_free(aa_subst);
 
     }
 
@@ -453,12 +466,12 @@ void detect_file_args(char** argv, u8* prog_in) {
 
 }
 
-char** get_qemu_argv(u8* own_loc, char** argv, int argc) {
+char **get_qemu_argv(u8 *own_loc, char **argv, int argc) {
 
-  char** new_argv = ck_alloc(sizeof(char*) * (argc + 4));
-  u8 *   tmp, *cp, *rsl, *own_copy;
+  char **new_argv = ck_alloc(sizeof(char *) * (argc + 4));
+  u8 *tmp, *cp, *rsl, *own_copy;
 
-  memcpy(new_argv + 3, argv + 1, sizeof(char*) * argc);
+  memcpy(new_argv + 3, argv + 1, sizeof(char *) * argc);
 
   new_argv[2] = target_path;
   new_argv[1] = "--";
@@ -472,7 +485,8 @@ char** get_qemu_argv(u8* own_loc, char** argv, int argc) {
 
     cp = alloc_printf("%s/afl-qemu-cov-tracer", tmp);
 
-    if (access(cp, X_OK)) FATAL("Unable to find '%s'", tmp);
+    if (access(cp, X_OK))
+      FATAL("Unable to find '%s'", tmp);
 
     target_path = new_argv[0] = cp;
     return new_argv;
@@ -522,7 +536,8 @@ static void handle_stop_sig(int sig) {
 
   stop_soon = 1;
 
-  if (child_pid > 0) kill(child_pid, SIGKILL);
+  if (child_pid > 0)
+    kill(child_pid, SIGKILL);
 
 }
 
@@ -532,7 +547,7 @@ static void handle_timeout(int sig) {
 
   if (child_pid > 0) {
 
-  child_timed_out = 1;
+    child_timed_out = 1;
     kill(child_pid, SIGKILL);
 
   } else if (child_pid == -1 && forksrv_pid > 0) {
@@ -570,12 +585,12 @@ static void setup_signal_handlers(void) {
 
 }
 
-
 /* Get rid of temp files (atexit handler). */
 
 static void at_exit_handler(void) {
 
-  if (out_file) unlink(out_file);                          /* Ignore errors */
+  if (out_file)
+    unlink(out_file);                                      /* Ignore errors */
 
 }
 
@@ -583,19 +598,21 @@ static void at_exit_handler(void) {
 
 static void set_up_environment(void) {
 
-  u8* x;
+  u8 *x;
 
   dev_null_fd = open("/dev/null", O_RDWR);
-  if (dev_null_fd < 0) PFATAL("Unable to open /dev/null");
+  if (dev_null_fd < 0)
+    PFATAL("Unable to open /dev/null");
 
   if (!out_file) {
 
-    u8* use_dir = ".";
+    u8 *use_dir = ".";
 
     if (access(use_dir, R_OK | W_OK | X_OK)) {
 
       use_dir = getenv("TMPDIR");
-      if (!use_dir) use_dir = "/tmp";
+      if (!use_dir)
+        use_dir = "/tmp";
 
     }
 
@@ -607,21 +624,21 @@ static void set_up_environment(void) {
 
   out_fd = open(out_file, O_RDWR | O_CREAT | O_EXCL, 0600);
 
-  if (out_fd < 0) PFATAL("Unable to create '%s'", out_file);
+  if (out_fd < 0)
+    PFATAL("Unable to create '%s'", out_file);
 
   if (getenv("AFL_PRELOAD")) {
 
-    u8* qemu_preload = getenv("QEMU_SET_ENV");
-    u8* afl_preload = getenv("AFL_PRELOAD");
-    u8* buf;
+    u8 *qemu_preload = getenv("QEMU_SET_ENV");
+    u8 *afl_preload = getenv("AFL_PRELOAD");
+    u8 *buf;
 
     s32 i, afl_preload_size = strlen(afl_preload);
     for (i = 0; i < afl_preload_size; ++i) {
 
       if (afl_preload[i] == ',')
-        PFATAL(
-            "Comma (',') is not allowed in AFL_PRELOAD when -Q is "
-            "specified!");
+        PFATAL("Comma (',') is not allowed in AFL_PRELOAD when -Q is "
+               "specified!");
 
     }
 
@@ -640,24 +657,23 @@ static void set_up_environment(void) {
 
 /* Display usage hints. */
 
-static void usage(u8* argv0) {
+static void usage(u8 *argv0) {
 
-  SAYF(
-      "\n%s [ options ] -- /path/to/target_app [ ... ]\n\n"
+  SAYF("\n%s [ options ] -- /path/to/target_app [ ... ]\n\n"
 
-      "Required parameters:\n\n"
+       "Required parameters:\n\n"
 
-      "  -i file       - input directory\n"
-      "  -o file       - output CSV\n\n"
+       "  -i file       - input directory\n"
+       "  -o file       - output CSV\n\n"
 
-      "Execution control settings:\n\n"
+       "Execution control settings:\n\n"
 
-      "  -f file       - input file read by the tested program (stdin)\n"
-      "  -t msec       - timeout for each run (%d ms)\n\n"
+       "  -f file       - input file read by the tested program (stdin)\n"
+       "  -t msec       - timeout for each run (%d ms)\n\n"
 
-      "For additional tips, please consult README.md.\n\n",
+       "For additional tips, please consult README.md.\n\n",
 
-      argv0, EXEC_TIMEOUT);
+       argv0, EXEC_TIMEOUT);
 
   exit(1);
 
@@ -665,70 +681,76 @@ static void usage(u8* argv0) {
 
 /* Main entry point */
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 
-  s32    opt;
+  s32 opt;
   u8 timeout_given = 0;
-  char** use_argv;
+  char **use_argv;
 
-  SAYF(cCYA "afl-qemu-cov" VERSION cRST " by Andrea Fioraldi <andreafioraldi@gmail.com>\n");
+  SAYF(cCYA "afl-qemu-cov" VERSION cRST
+            " by Andrea Fioraldi <andreafioraldi@gmail.com>\n");
 
   while ((opt = getopt(argc, argv, "+i:o:f:m:t:B:xeQUWh")) > 0)
 
     switch (opt) {
 
-      case 'i':
+    case 'i':
 
-        if (in_dir) FATAL("Multiple -i options not supported");
-        in_dir = optarg;
-        break;
+      if (in_dir)
+        FATAL("Multiple -i options not supported");
+      in_dir = optarg;
+      break;
 
-      case 'o':
+    case 'o':
 
-        if (output_file) FATAL("Multiple -o options not supported");
-        output_file = optarg;
-        
-        if (strcmp(output_file, "-"))
-          setenv("BB_LOG_FILE", output_file, 1);
-        else 
-          output_file = NULL; // stderr
+      if (output_file)
+        FATAL("Multiple -o options not supported");
+      output_file = optarg;
 
-        break;
+      if (strcmp(output_file, "-"))
+        setenv("BB_LOG_FILE", output_file, 1);
+      else
+        output_file = NULL; // stderr
 
-      case 'f':
+      break;
 
-        if (out_file) FATAL("Multiple -f options not supported");
-        use_stdin = 0;
-        out_file = optarg;
-        break;
+    case 'f':
 
-      case 't':
+      if (out_file)
+        FATAL("Multiple -f options not supported");
+      use_stdin = 0;
+      out_file = optarg;
+      break;
 
-        if (timeout_given) FATAL("Multiple -t options not supported");
-        timeout_given = 1;
+    case 't':
 
-        exec_tmout = atoi(optarg);
+      if (timeout_given)
+        FATAL("Multiple -t options not supported");
+      timeout_given = 1;
 
-        if (exec_tmout < 10 || optarg[0] == '-')
-          FATAL("Dangerously low value of -t");
+      exec_tmout = atoi(optarg);
 
-        break;
+      if (exec_tmout < 10 || optarg[0] == '-')
+        FATAL("Dangerously low value of -t");
 
+      break;
 
-      case 'h':
-        usage(argv[0]);
-        return -1;
-        break;
+    case 'h':
+      usage(argv[0]);
+      return -1;
+      break;
 
-      default: usage(argv[0]);
+    default:
+      usage(argv[0]);
 
     }
 
-  if (optind == argc || !in_dir) usage(argv[0]);
+  if (optind == argc || !in_dir)
+    usage(argv[0]);
 
   atexit(at_exit_handler);
   setup_signal_handlers();
-  
+
   set_up_environment();
   find_binary(argv[optind]);
   detect_file_args(argv + optind, out_file);
