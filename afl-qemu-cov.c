@@ -113,6 +113,8 @@ static void collect_coverage(char **argv) {
     run_target(argv, mem, st.st_size, testcase_id);
 
     munmap(mem, st.st_size);
+    
+    close(fd);
 
     if (stop_soon)
       break;

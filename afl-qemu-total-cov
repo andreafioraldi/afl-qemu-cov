@@ -18,7 +18,7 @@ with open(args.l) as f:
     log = filter(lambda x: not x.startswith("#"), f.readlines())
     log = map(lambda x: map(lambda y: y.strip(), x.split(",")), log)
 
-bbs = {}
+bbs = set()
 for testcase_id, bb_addr in log:
     bbs.add(bb_addr)
 
