@@ -16,6 +16,11 @@ This output.csv file contains tuples in the format
 (testcase id, basic block address). Of course the testcase id not no unique as
 a testcase may discover more than one basic block.
 
+`./afl-qemu-total-cov -l output1.csv`
+
+This script outputs the Basic Blocks coverage from the output of the previous
+script.
+
 `./afl-qemu-ts-cov -i /path/to/AFL/queue -l output1.csv -o output2.csv`
 
 This script will create output2.csv that contains the tuples
