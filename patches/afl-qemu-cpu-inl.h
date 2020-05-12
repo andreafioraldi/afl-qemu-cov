@@ -49,6 +49,7 @@
                                       \
     if (itb->pc == afl_entry_point) { \
                                       \
+      afl_setup();                    \
       afl_forkserver(cpu);            \
                                       \
     }                                 \
@@ -78,6 +79,7 @@ abi_ulong afl_entry_point,                      /* ELF entry point (_start) */
 /* Set in the child process in forkserver mode: */
 
 static int forkserver_installed = 0;
+static int shmem_setupped = 0;
 
 unsigned char afl_fork_child;
 unsigned int  afl_forksrv_pid;
@@ -176,6 +178,9 @@ static void update_afl_htable(target_ulong pc) {
 
 static void afl_setup(void) {
 
+  if (shmem_setupped == 1) return;
+  shmem_setupped = 1;
+
   if (getenv("BB_LOG_FILE")) {
     out_file = fopen(getenv("BB_LOG_FILE"), "w");
   } else {
@@ -224,8 +229,6 @@ static void afl_forkserver(CPUState *cpu) {
   if (forkserver_installed == 1) return;
   forkserver_installed = 1;
   
-  afl_setup();
-
   if (getenv("AFL_QEMU_DEBUG_MAPS")) print_mappings();
 
   if (write(FORKSRV_FD + 1, &testcase_id, 4) != 4) return;
@@ -295,7 +298,16 @@ static void afl_request_tsl(target_ulong pc, target_ulong cb, uint32_t flags,
   struct afl_tsl   t;
   struct afl_chain c;
 
-  if (!afl_fork_child) return;
+  if (!afl_fork_child) {
+  
+    afl_setup();
+    update_afl_htable(pc);
+    if (last_tb != NULL)
+      update_afl_htable(last_tb->pc);
+
+    return;
+  
+  }
 
   t.tb.pc = pc;
   t.tb.cs_base = cb;
