@@ -49,7 +49,6 @@
                                       \
     if (itb->pc == afl_entry_point) { \
                                       \
-      afl_setup();                    \
       afl_forkserver(cpu);            \
                                       \
     }                                 \
@@ -224,6 +223,8 @@ static void afl_forkserver(CPUState *cpu) {
 
   if (forkserver_installed == 1) return;
   forkserver_installed = 1;
+  
+  afl_setup();
 
   if (getenv("AFL_QEMU_DEBUG_MAPS")) print_mappings();
 
