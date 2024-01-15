@@ -23,7 +23,7 @@
 #
 
 VERSION="3.1.1"
-QEMU_URL="http://download.qemu-project.org/qemu-${VERSION}.tar.xz"
+QEMU_URL="https://download.qemu.org/qemu-${VERSION}.tar.xz"
 QEMU_SHA384="28ff22ec4b8c957309460aa55d0b3188e971be1ea7dfebfb2ecc7903cd20cfebc2a7c97eedfcc7595f708357f1623f8b"
 
 echo "[*] Performing basic sanity checks..."

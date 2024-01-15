@@ -33,6 +33,7 @@
 
 #include <sys/shm.h>
 #include "../include/config.h"
+#include "exec/cpu_ldst.h"
 
 #define PERSISTENT_DEFAULT_MAX_CNT 1000
 
@@ -75,6 +76,17 @@ struct map_entry *afl_area[MAP_SIZE];          /* Exported for afl_gen_trace */
 abi_ulong afl_entry_point,                      /* ELF entry point (_start) */
     afl_start_code,                             /* .text start pointer      */
     afl_end_code;                               /* .text end pointer        */
+
+// This structure is used for tracking which
+// code is to be instrumented via afl_instr_code.
+struct vmrange {
+  target_ulong start, end;
+  char* name;
+  bool exclude; // Exclude this region rather than include it
+  struct vmrange* next;
+};
+
+struct vmrange* afl_instr_code;
 
 /* Set in the child process in forkserver mode: */
 
@@ -151,9 +163,30 @@ static inline int is_valid_addr(target_ulong addr) {
 
 }
 
+static inline int afl_must_instrument(target_ulong addr) {
+
+  // Reject any exclusion regions
+  for (struct vmrange* n = afl_instr_code; n; n = n->next) {
+    if (n->exclude && addr < n->end && addr >= n->start)
+      return 0;
+  }
+
+  // Check for inclusion in instrumentation regions
+  if (addr < afl_end_code && addr >= afl_start_code)
+    return 1;
+
+  for (struct vmrange* n = afl_instr_code; n; n = n->next) {
+    if (!n->exclude && addr < n->end && addr >= n->start)
+      return 1;
+  }
+
+  return 0;
+
+}
+
 static void update_afl_htable(target_ulong pc) {
 
-  if (pc > afl_end_code || pc < afl_start_code) return;
+  if (!afl_must_instrument(pc)) return;
   
   if (!is_valid_addr(pc)) return;
   
@@ -194,11 +227,161 @@ static void afl_setup(void) {
     afl_end_code = (abi_ulong)-1;
 
   }
-
+  
   if (getenv("AFL_CODE_START"))
     afl_start_code = strtoll(getenv("AFL_CODE_START"), NULL, 16);
   if (getenv("AFL_CODE_END"))
     afl_end_code = strtoll(getenv("AFL_CODE_END"), NULL, 16);
+
+  int have_names = 0;
+  if (getenv("AFL_QEMU_INST_RANGES")) {
+    char *str = getenv("AFL_QEMU_INST_RANGES");
+    char *saveptr1, *saveptr2 = NULL, *save_pt1 = NULL;
+    char *pt1, *pt2, *pt3 = NULL;
+    
+    while (1) {
+
+      pt1 = strtok_r(str, ",", &saveptr1);
+      if (pt1 == NULL) break;
+      str = NULL;
+      save_pt1 = strdup(pt1);
+      
+      pt2 = strtok_r(pt1, "-", &saveptr2);
+      pt3 = strtok_r(NULL, "-", &saveptr2);
+      
+      struct vmrange* n = calloc(1, sizeof(struct vmrange));
+      n->next = afl_instr_code;
+
+      if (pt3 == NULL) { // filename
+        have_names = 1;
+        n->start = (target_ulong)-1;
+        n->end = 0;
+        n->name = save_pt1;
+      } else {
+        n->start = strtoull(pt2, NULL, 16);
+        n->end = strtoull(pt3, NULL, 16);
+        if (n->start && n->end) {
+          n->name = NULL;
+          free(save_pt1);
+        } else {
+          have_names = 1;
+          n->start = (target_ulong)-1;
+          n->end = 0;
+          n->name = save_pt1;
+        }
+      }
+      
+      afl_instr_code = n;
+
+    }
+  }
+
+  if (getenv("AFL_QEMU_EXCLUDE_RANGES")) {
+    char *str = getenv("AFL_QEMU_EXCLUDE_RANGES");
+    char *saveptr1, *saveptr2 = NULL, *save_pt1;
+    char *pt1, *pt2, *pt3 = NULL;
+
+    while (1) {
+
+      pt1 = strtok_r(str, ",", &saveptr1);
+      if (pt1 == NULL) break;
+      str = NULL;
+      save_pt1 = strdup(pt1);
+
+      pt2 = strtok_r(pt1, "-", &saveptr2);
+      pt3 = strtok_r(NULL, "-", &saveptr2);
+
+      struct vmrange* n = calloc(1, sizeof(struct vmrange));
+      n->exclude = true; // These are "exclusion" regions.
+      n->next = afl_instr_code;
+
+      if (pt3 == NULL) { // filename
+        have_names = 1;
+        n->start = (target_ulong)-1;
+        n->end = 0;
+        n->name = save_pt1;
+      } else {
+        n->start = strtoull(pt2, NULL, 16);
+        n->end = strtoull(pt3, NULL, 16);
+        if (n->start && n->end) {
+          n->name = NULL;
+          free(save_pt1);
+        } else {
+          have_names = 1;
+          n->start = (target_ulong)-1;
+          n->end = 0;
+          n->name = save_pt1;
+        }
+      }
+
+      afl_instr_code = n;
+
+    }
+  }
+
+  if (have_names) {
+    FILE *fp;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    fp = fopen("/proc/self/maps", "r");
+
+    while ((read = getline(&line, &len, fp)) != -1) {
+        int fields, dev_maj, dev_min, inode;
+        uint64_t min, max, offset;
+        char flag_r, flag_w, flag_x, flag_p;
+        char path[512] = "";
+        fields = sscanf(line, "%"PRIx64"-%"PRIx64" %c%c%c%c %"PRIx64" %x:%x %d"
+                        " %512s", &min, &max, &flag_r, &flag_w, &flag_x,
+                        &flag_p, &offset, &dev_maj, &dev_min, &inode, path);
+
+        if ((fields < 10) || (fields > 11)) {
+            continue;
+        }
+        if (h2g_valid(min)) {
+            int flags = page_get_flags(h2g(min));
+            max = h2g_valid(max - 1) ? max : (uintptr_t)g2h(GUEST_ADDR_MAX) + 1;
+            if (page_check_range(h2g(min), max - min, flags) == -1) {
+                continue;
+            }
+            
+            // Now that we have a valid guest address region, compare its
+            // name against the names we care about:
+            target_ulong gmin = h2g(min);
+            target_ulong gmax = h2g(max);
+
+            struct vmrange* n = afl_instr_code;
+            while (n) {
+              if (n->name && strstr(path, n->name)) {
+                if (gmin < n->start) n->start = gmin;
+                if (gmax > n->end) n->end = gmax;
+                break;
+              }
+              n = n->next;
+            }
+        }
+    }
+
+    free(line);
+    fclose(fp);
+  }
+  
+  if (getenv("AFL_DEBUG") && afl_instr_code) {
+    struct vmrange* n = afl_instr_code;
+    while (n) {
+      if (n->exclude) {
+        fprintf(stderr, "Exclude range: 0x%lx-0x%lx (%s)\n",
+                (unsigned long)n->start, (unsigned long)n->end,
+                n->name ? n->name : "<noname>");
+      } else {
+        fprintf(stderr, "Instrument range: 0x%lx-0x%lx (%s)\n",
+                (unsigned long)n->start, (unsigned long)n->end,
+                n->name ? n->name : "<noname>");
+      }
+      n = n->next;
+    }
+  }
 
   /* pthread_atfork() seems somewhat broken in util/rcu.c, and I'm
      not entirely sure what is the cause. This disables that

@@ -28,3 +28,7 @@ This script will create output2.csv that contains the tuples
 
 This script uses the time fields in the name of the testcase and so cannot be
 used with AFL but only with AFL++.
+
+## Option
+
+Use AFL_QEMU_INST_RANGES / AFL_QEMU_EXCLUDE_RANGES as in AFL++
