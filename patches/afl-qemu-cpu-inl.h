@@ -353,7 +353,7 @@ static void afl_setup(void) {
 
             struct vmrange* n = afl_instr_code;
             while (n) {
-              if (n->name && strstr(path, n->name)) {
+              if (n->name && strstr(n->name, path)) {
                 if (gmin < n->start) n->start = gmin;
                 if (gmax > n->end) n->end = gmax;
                 break;
